@@ -1,6 +1,7 @@
 import shutil
 import os
 import yaml
+import time
 
 def laad_settings(bestand_pad):
     """
@@ -88,6 +89,7 @@ if __name__ == "__main__":
     if 'disks' not in settings:
         settings['disks'] = []
 
+    # Eenmalige configuratie van schijven
     for i in range(2):
         if len(settings['disks']) <= i:
             disk_path = input(f"Voer het pad van schijf {i + 1} in: ")
@@ -97,5 +99,15 @@ if __name__ == "__main__":
             settings['disks'].append({'path': disk_path, 'min_free_gb': min_free_gb})
             sla_settings_op(settings_pad, settings)
 
-    sla_settings_op(settings_pad, settings)
-    check_en_monitor_schijven(settings)
+    # Voeg een while loop toe voor continue monitoring
+    try:
+        while True:
+            print("\nControleren van schijfruimte...")
+            check_en_monitor_schijven(settings)
+            # Wacht 5 minuten voordat de volgende controle wordt uitgevoerd
+            print("--------------------------------")
+            print("Wachten 5 minuten voordat de volgende controle wordt uitgevoerd...")
+            print("--------------------------------")
+            time.sleep(300)
+    except KeyboardInterrupt:
+        print("\nProgramma wordt afgesloten...")
