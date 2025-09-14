@@ -28,7 +28,7 @@ def sla_settings_op(bestand_pad, settings):
     with open(bestand_pad, 'w') as bestand:
         yaml.dump(settings, bestand)
 
-def check_free_space(disk_path, min_free_gb, webhook_url):
+def check_free_space(disk_path, min_free_gb, webhook_url, actie, verplaats_locatie):
     if os.name == 'nt':
         disk_path = disk_path.replace('/', '\\')
 
@@ -37,11 +37,11 @@ def check_free_space(disk_path, min_free_gb, webhook_url):
 
     if free_gb < min_free_gb:
         print_en_discord(f"Onvoldoende ruimte! Er is slechts {free_gb:.2f} GB vrij op {disk_path}.", webhook_url)
-        verwijder_oudste_bestand(disk_path, webhook_url)
+        verwijder_oudste_bestand(disk_path, webhook_url, actie, verplaats_locatie)
     else:
         print_en_discord(f"Er is voldoende ruimte! Er is {free_gb:.2f} GB vrij op {disk_path}.", webhook_url)
 
-def verwijder_oudste_bestand(map_pad, webhook_url):
+def verwijder_oudste_bestand(map_pad, webhook_url, actie, verplaats_locatie=None):
     oudste_bestand = None
     oudste_tijd = float('inf')
 
@@ -55,10 +55,17 @@ def verwijder_oudste_bestand(map_pad, webhook_url):
 
     if oudste_bestand:
         try:
-            os.remove(oudste_bestand)
-            print_en_discord(f"Het oudste bestand is verwijderd: {oudste_bestand}", webhook_url)
+            if actie == 'verplaatsen' and verplaats_locatie:
+                nieuwe_pad = os.path.join(verplaats_locatie, os.path.basename(oudste_bestand))
+                shutil.move(oudste_bestand, nieuwe_pad)
+                print_en_discord(f"Het oudste bestand is verplaatst: {oudste_bestand} naar {nieuwe_pad}", webhook_url)
+            elif actie == 'verwijderen':
+                os.remove(oudste_bestand)
+                print_en_discord(f"Het oudste bestand is verwijderd: {oudste_bestand}", webhook_url)
+            else:
+                print_en_discord(f"Ongeldige actie of ontbrekende verplaatsingslocatie: {actie}", webhook_url)
         except Exception as e:
-            print_en_discord(f"Fout bij verwijderen van {oudste_bestand}: {e}", webhook_url)
+            print_en_discord(f"Fout bij uitvoeren van actie op {oudste_bestand}: {e}", webhook_url)
     else:
         print_en_discord("Er zijn geen bestanden gevonden in de opgegeven map.", webhook_url)
 
@@ -67,8 +74,10 @@ def check_en_monitor_schijven(settings):
     for disk in settings.get('disks', []):
         disk_path = disk.get('path')
         min_free_gb = disk.get('min_free_gb', 40)
+        actie = disk.get('actie', 'verwijderen') # Standaard actie is verwijderen
+        verplaats_locatie = disk.get('verplaats_locatie')
         if disk_path:
-            check_free_space(disk_path, min_free_gb, webhook_url)
+            check_free_space(disk_path, min_free_gb, webhook_url, actie, verplaats_locatie)
 
 if __name__ == "__main__":
     while True:
@@ -91,7 +100,18 @@ if __name__ == "__main__":
                     min_free_gb = input(f"Voer de minimum vrije ruimte in GB in voor schijf {i + 1} (standaard 40): ")
                     min_free_gb = int(min_free_gb) if min_free_gb.strip().isdigit() else 40
 
-                    settings['disks'].append({'path': disk_path, 'min_free_gb': min_free_gb})
+                    actie = input(f"Voer de actie in voor schijf {i + 1} (verplaatsen/verwijderen, standaard verwijderen): ").lower()
+                    if actie not in ['verplaatsen', 'verwijderen']:
+                        actie = 'verwijderen'
+
+                    verplaats_locatie = None
+                    if actie == 'verplaatsen':
+                        verplaats_locatie = input(f"Voer de verplaatsingslocatie in voor schijf {i + 1}: ")
+                        while not os.path.isdir(verplaats_locatie):
+                            print("Ongeldig pad. Zorg ervoor dat de map bestaat.")
+                            verplaats_locatie = input(f"Voer de verplaatsingslocatie in voor schijf {i + 1}: ")
+
+                    settings['disks'].append({'path': disk_path, 'min_free_gb': min_free_gb, 'actie': actie, 'verplaats_locatie': verplaats_locatie})
                     sla_settings_op(settings_pad, settings)
 
             laatste_clear = datetime.now()
