@@ -6,6 +6,9 @@ from datetime import datetime, timedelta
 import requests
 
 def stuur_discord_bericht(bericht, webhook_url):
+    if not webhook_url:  # Als er geen webhook URL is ingesteld, stuur geen bericht
+        return
+    
     try:
         data = {
             "content": bericht,
@@ -16,6 +19,7 @@ def stuur_discord_bericht(bericht, webhook_url):
         print(f"Fout bij versturen Discord bericht: {e}")
 
 def print_en_discord(bericht, webhook_url):
+    print(bericht)
     stuur_discord_bericht(bericht, webhook_url)
 
 def laad_settings(bestand_pad):
@@ -69,12 +73,35 @@ def verwijder_oudste_bestand(map_pad, webhook_url, actie, verplaats_locatie=None
     else:
         print_en_discord("Er zijn geen bestanden gevonden in de opgegeven map.", webhook_url)
 
+def vraag_schijf_instellingen():
+    disk_path = input("Voer het pad van de schijf in: ")
+    min_free_gb = input("Voer de minimum vrije ruimte in GB in (standaard 40): ")
+    min_free_gb = int(min_free_gb) if min_free_gb.strip().isdigit() else 40
+
+    actie = input("Voer de actie in (verplaatsen/verwijderen, standaard verwijderen): ").lower()
+    if actie not in ['verplaatsen', 'verwijderen']:
+        actie = 'verwijderen'
+
+    verplaats_locatie = None
+    if actie == 'verplaatsen':
+        verplaats_locatie = input("Voer de verplaatsingslocatie in: ")
+        while not os.path.isdir(verplaats_locatie):
+            print("Ongeldig pad. Zorg ervoor dat de map bestaat.")
+            verplaats_locatie = input("Voer de verplaatsingslocatie in: ")
+
+    return {
+        'path': disk_path,
+        'min_free_gb': min_free_gb,
+        'actie': actie,
+        'verplaats_locatie': verplaats_locatie
+    }
+
 def check_en_monitor_schijven(settings):
     webhook_url = settings.get('webhook_url', '')
     for disk in settings.get('disks', []):
         disk_path = disk.get('path')
         min_free_gb = disk.get('min_free_gb', 40)
-        actie = disk.get('actie', 'verwijderen') # Standaard actie is verwijderen
+        actie = disk.get('actie', 'verwijderen')
         verplaats_locatie = disk.get('verplaats_locatie')
         if disk_path:
             check_free_space(disk_path, min_free_gb, webhook_url, actie, verplaats_locatie)
@@ -88,31 +115,25 @@ if __name__ == "__main__":
             if 'disks' not in settings:
                 settings['disks'] = []
 
+            # Vraag eerst of de gebruiker Discord webhook wil gebruiken
             if 'webhook_url' not in settings:
-                settings['webhook_url'] = input("Voer de Discord webhook URL in: ")
+                gebruik_discord = input("Wilt u Discord webhook gebruiken? (ja/nee): ").lower() == 'ja'
+                settings['webhook_url'] = input("Voer de Discord webhook URL in: ") if gebruik_discord else ''
                 sla_settings_op(settings_pad, settings)
 
             webhook_url = settings['webhook_url']
 
-            for i in range(2):
-                if len(settings['disks']) <= i:
-                    disk_path = input(f"Voer het pad van schijf {i + 1} in: ")
-                    min_free_gb = input(f"Voer de minimum vrije ruimte in GB in voor schijf {i + 1} (standaard 40): ")
-                    min_free_gb = int(min_free_gb) if min_free_gb.strip().isdigit() else 40
-
-                    actie = input(f"Voer de actie in voor schijf {i + 1} (verplaatsen/verwijderen, standaard verwijderen): ").lower()
-                    if actie not in ['verplaatsen', 'verwijderen']:
-                        actie = 'verwijderen'
-
-                    verplaats_locatie = None
-                    if actie == 'verplaatsen':
-                        verplaats_locatie = input(f"Voer de verplaatsingslocatie in voor schijf {i + 1}: ")
-                        while not os.path.isdir(verplaats_locatie):
-                            print("Ongeldig pad. Zorg ervoor dat de map bestaat.")
-                            verplaats_locatie = input(f"Voer de verplaatsingslocatie in voor schijf {i + 1}: ")
-
-                    settings['disks'].append({'path': disk_path, 'min_free_gb': min_free_gb, 'actie': actie, 'verplaats_locatie': verplaats_locatie})
-                    sla_settings_op(settings_pad, settings)
+            # Vraag het aantal schijven dat de gebruiker wil instellen
+            if len(settings['disks']) == 0:
+                try:
+                    aantal_schijven = int(input("Hoeveel schijven wilt u instellen? "))
+                    for i in range(aantal_schijven):
+                        print(f"\nInstellingen voor schijf {i + 1}:")
+                        settings['disks'].append(vraag_schijf_instellingen())
+                        sla_settings_op(settings_pad, settings)
+                except ValueError:
+                    print("Voer een geldig nummer in.")
+                    continue
 
             laatste_clear = datetime.now()
             while True:
@@ -130,18 +151,20 @@ if __name__ == "__main__":
         except Exception as e:
             error_bericht = f"\nEr is een fout opgetreden: {e}"
             print(error_bericht)
-            try:
-                stuur_discord_bericht(error_bericht, webhook_url)
-            except:
-                print("Kon de error niet naar Discord sturen")
+            if webhook_url:
+                try:
+                    stuur_discord_bericht(error_bericht, webhook_url)
+                except:
+                    print("Kon de error niet naar Discord sturen")
             print("Het programma zal over 10 seconden opnieuw opstarten...")
             time.sleep(10)
         except KeyboardInterrupt:
             afsluit_bericht = "\nProgramma wordt afgesloten... Druk op Enter om het venster te sluiten."
             print(afsluit_bericht)
-            try:
-                stuur_discord_bericht(afsluit_bericht, webhook_url)
-            except:
-                print("Kon het afsluitbericht niet naar Discord sturen")
+            if webhook_url:
+                try:
+                    stuur_discord_bericht(afsluit_bericht, webhook_url)
+                except:
+                    print("Kon het afsluitbericht niet naar Discord sturen")
             input("")
             break
